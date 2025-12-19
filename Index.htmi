@@ -5,26 +5,23 @@
 <title>MaliApp</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<!-- Firebase -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { 
-  getAuth,
-  createUserWithEmailAndPassword,
+  getAuth, 
+  createUserWithEmailAndPassword, 
   signInWithEmailAndPassword,
-  onAuthStateChanged
+  onAuthStateChanged 
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-
-import {
-  getFirestore,
-  doc,
-  setDoc,
-  getDoc,
-  updateDoc,
-  arrayUnion
+import { 
+  getFirestore, 
+  doc, 
+  setDoc, 
+  getDoc, 
+  updateDoc, 
+  increment 
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-/* 🔐 إعدادات Firebase */
 const firebaseConfig = {
   apiKey: "AIzaSyBfMUa-8vsUZ_1r5F79iSKOKqMre99lwbI",
   authDomain: "maliapp-63f91.firebaseapp.com",
@@ -38,154 +35,113 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-/* 🎯 تسجيل حساب */
-window.register = async () => {
-  const email = emailInput.value;
-  const pass = passwordInput.value;
+/* توليد كود دعوة */
+function generateRef() {
+  return Math.random().toString(36).substring(2,8).toUpperCase();
+}
 
-  if(!email || !pass) return alert("عبي الحقول");
+/* تسجيل حساب */
+window.register = async () => {
+  const email = email.value;
+  const password = password.value;
+  const refInput = document.getElementById("ref").value;
 
   try {
-    const res = await createUserWithEmailAndPassword(auth,email,pass);
-    const uid = res.user.uid;
+    const cred = await createUserWithEmailAndPassword(auth, email, password);
+    const uid = cred.user.uid;
+    const myRef = generateRef();
 
-    const inviteCode = uid.slice(0,6);
-
-    await setDoc(doc(db,"users",uid),{
+    await setDoc(doc(db, "users", uid), {
       email,
       balance: 0,
-      inviteCode,
-      team: [],
-      level: 1
+      refCode: myRef,
+      teamCount: 0,
+      level: 1,
+      invitedBy: refInput || null
     });
 
+    // لو جا عن طريق دعوة
+    if (refInput) {
+      const q = await getDoc(doc(db, "refs", refInput));
+      if (q.exists()) {
+        const inviterId = q.data().uid;
+        await updateDoc(doc(db,"users",inviterId),{
+          teamCount: increment(1),
+          balance: increment(10)
+        });
+      }
+    }
+
+    await setDoc(doc(db,"refs",myRef),{ uid });
+
     alert("✅ تم إنشاء الحساب");
-  } catch(e) {
-    alert(e.message);
-  }
+  } catch(e){ alert(e.message); }
 };
 
-/* 🔑 تسجيل دخول */
+/* تسجيل دخول */
 window.login = async () => {
   try {
-    await signInWithEmailAndPassword(auth,emailInput.value,passwordInput.value);
-  } catch(e) {
-    alert("❌ خطأ في الدخول");
-  }
+    await signInWithEmailAndPassword(auth, email.value, password.value);
+  } catch(e){ alert(e.message); }
 };
 
-/* 👀 مراقبة الحالة */
-onAuthStateChanged(auth, async user => {
-  if(user){
-    authBox.style.display="none";
-    appBox.style.display="block";
-
-    const snap = await getDoc(doc(db,"users",user.uid));
-    const data = snap.data();
-
-    balance.innerText = data.balance;
-    inviteLink.innerText =
-      location.origin + location.pathname + "?ref=" + data.inviteCode;
-
-    renderTeam(data.team);
-  }
-});
-
-/* 👥 إضافة عضو فريق */
-window.addFriend = async () => {
-  const user = auth.currentUser;
-  const refEmail = friendEmail.value;
-
-  if(!refEmail) return;
-
-  const ref = doc(db,"users",user.uid);
-
-  await updateDoc(ref,{
-    balance: 10,
-    team: arrayUnion(refEmail)
-  });
-
-  alert("👤 تمت إضافة عضو للفريق");
-  location.reload();
-};
-
-/* 💸 سحب راتب وهمي */
+/* سحب راتب وهمي */
 window.withdraw = async () => {
   const user = auth.currentUser;
   const ref = doc(db,"users",user.uid);
   const snap = await getDoc(ref);
 
-  let bal = snap.data().balance;
-  if(bal < 10) return alert("الرصيد غير كافي");
-
-  await updateDoc(ref,{ balance: bal - 10 });
-  alert("💰 تم سحب الراتب");
-  location.reload();
+  if (snap.data().balance >= 50) {
+    await updateDoc(ref,{ balance: increment(-50) });
+    alert("💰 تم سحب الراتب الوهمي");
+  } else {
+    alert("❌ الرصيد غير كافي");
+  }
 };
 
-/* عرض الفريق */
-function renderTeam(team){
-  teamList.innerHTML="";
-  team.forEach(t=>{
-    const d=document.createElement("div");
-    d.innerText="👤 "+t;
-    teamList.appendChild(d);
-  });
-}
+/* تحميل البيانات */
+onAuthStateChanged(auth, async user=>{
+  if(user){
+    authBox.style.display="none";
+    appBox.style.display="block";
+
+    const snap = await getDoc(doc(db,"users",user.uid));
+    const d = snap.data();
+
+    balance.innerText = d.balance;
+    team.innerText = d.teamCount;
+    level.innerText = Math.floor(d.teamCount/3)+1;
+    link.innerText = location.origin+"?ref="+d.refCode;
+  }
+});
 </script>
 
 <style>
-body{
-  background:linear-gradient(135deg,#6a11cb,#2575fc);
-  font-family:Arial;
-  display:flex;
-  justify-content:center;
-  align-items:center;
-  height:100vh;
-}
-.box{
-  background:#fff;
-  width:330px;
-  padding:20px;
-  border-radius:12px;
-  text-align:center;
-}
-input,button{
-  width:100%;
-  padding:10px;
-  margin:6px 0;
-}
-button{
-  background:#2575fc;
-  color:white;
-  border:none;
-  border-radius:6px;
-}
+body{background:#0f2027;color:#fff;font-family:Arial;display:flex;justify-content:center;align-items:center;height:100vh}
+.box{background:#1c1c1c;padding:20px;width:320px;border-radius:12px;text-align:center}
+input,button{width:100%;padding:10px;margin:6px 0;border-radius:6px;border:none}
+button{background:#00c853;color:#000;font-weight:bold}
 </style>
 </head>
 
 <body>
 
 <div class="box" id="authBox">
-  <h2>MaliApp</h2>
-  <input id="emailInput" type="email" placeholder="Email">
-  <input id="passwordInput" type="password" placeholder="Password">
-  <button onclick="register()">تسجيل حساب</button>
-  <button onclick="login()">تسجيل دخول</button>
+<h2>MaliApp</h2>
+<input id="email" placeholder="Email">
+<input id="password" type="password" placeholder="Password">
+<input id="ref" placeholder="كود دعوة (اختياري)">
+<button onclick="register()">تسجيل</button>
+<button onclick="login()">دخول</button>
 </div>
 
 <div class="box" id="appBox" style="display:none">
-  <h3>رصيدك: <span id="balance">0</span></h3>
-  <p>رابط الدعوة:</p>
-  <small id="inviteLink"></small>
-
-  <input id="friendEmail" placeholder="إيميل صديق">
-  <button onclick="addFriend()">إضافة للفريق</button>
-
-  <button onclick="withdraw()">سحب راتب</button>
-
-  <h4>👥 الفريق</h4>
-  <div id="teamList"></div>
+<h3>رصيدك: <span id="balance"></span> مالي</h3>
+<p>الفريق: <span id="team"></span></p>
+<p>المستوى: <span id="level"></span></p>
+<p>رابط الدعوة:</p>
+<small id="link"></small>
+<button onclick="withdraw()">سحب راتب (50)</button>
 </div>
 
 </body>
